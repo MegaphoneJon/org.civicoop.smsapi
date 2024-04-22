@@ -39,8 +39,34 @@ class CRM_Smsapi_CivirulesAction extends CRM_CivirulesActions_Generic_Api {
   protected function alterApiParameters($parameters, CRM_Civirules_TriggerData_TriggerData $triggerData) {
     //this method could be overridden in subclasses to alter parameters to meet certain criteria
     $parameters['contact_id'] = $triggerData->getContactId();
-    if($triggerData->getEntity()=='Activity'){
-      $parameters['activity_id'] = $triggerData->getEntityId();
+    $actionParameters = $this->getActionParameters();
+    // change email address if other location type is used, falling back on primary if set
+    if (!empty($actionParameters['location_type_id'])) {
+      $parameters['location_type_id'] = $actionParameters['location_type_id'];
+    }
+    if (!empty($actionParameters['alternative_receiver_phone_number'])) {
+      $parameters['alternative_receiver_phone_number'] = $actionParameters['alternative_receiver_phone_number'];
+    }
+    if ($triggerData->getEntityData('Activity')) {
+      $activity = $triggerData->getEntityData('Activity');
+      $parameters['activity_id'] = $activity['id'];
+    }
+    $extra_data = ((array) $triggerData)["\0CRM_Civirules_TriggerData_TriggerData\0entity_data"] ?? [];
+    $parameters['extra_data'] = [];
+    foreach ($extra_data as $entityCamelCase => $entityData) {
+      // Convert Foo to foo and FooBar to foo_bar
+      $entity_snake_case = mb_strtolower(preg_replace(
+        '/(?<=\d)(?=[A-Za-z])|(?<=[A-Za-z])(?=\d)|(?<=[a-z])(?=[A-Z])/',
+        '_', $entityCamelCase));
+      // Copy the data to extra_data under the lowercase snake case name key.
+      $parameters['extra_data'][$entity_snake_case] = $entityData;
+      // For non-contact entities, create a top level ..._id key
+      if (isset($entityData['id']) && $entity_snake_case !== 'contact') {
+        $parameters[$entity_snake_case . '_id'] = $entityData['id'];
+        // Note: CRM_Emailapi_Utils_Tokens will again change this key from
+        // foo_bar_id to foo_barId. Despite looking wrong, this is correct
+        // in terms of the token processor's needs.
+      }
     }
     return $parameters;
   }
